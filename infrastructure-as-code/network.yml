@@ -1,0 +1,264 @@
+Parameters:
+
+  ProjectName:
+    Type: String
+    Description: Prefix name for our resources
+
+  VpcCIDR:
+    Type: String
+    Description: The CIDR block of the VPC 
+
+  PrivateSubnet1CIDR:
+    Type: String
+    Description: The CIDR block of the private subnet 1
+
+  PrivateSubnet2CIDR:
+    Type: String
+    Description: The CIDR block of the private subnet 2 
+
+  PublicSubnet1CIDR:
+    Type: String
+    Description: The CIDR block of the public subnet 1
+
+  PublicSubnet2CIDR:
+    Type: String
+    Description: The CIDR block of the public subnet 2 
+
+Resources:
+
+  VPC: 
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      Tags: 
+        - Key: Name 
+          Value: !Ref ProjectName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: !Ref ProjectName
+
+  # Attach the internet gateway to the VPC to allow the VPC to connect to the internet
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+                  ############# Subnets ###################
+  #########################################
+  PrivateSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ] # gets an Availability zone from the list of zones in the resgion of the VPC, the number 0 is an index (get the first one in the list)
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${ProjectName}-private-1
+
+  PrivateSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ] # the number 1 here ensures that this private subnet is in a different AZ from the first one
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${ProjectName}-private-2
+  
+  PublicSubnet1: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${ProjectName}-public-1
+
+  PublicSubnet2: 
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${ProjectName}-public-2
+
+            ############# NAT Gateways ###################
+  #########################################
+
+# We request an Elastic IP which is constant and known instead of normally created IPs that are disposable and ever-changing and can change sometimes.
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment # Probably not necessary, but it just makes sense to only create pulbic IPs if we can actually connect to the internet
+    Properties: 
+      Domain: vpc
+      Tags: 
+          - Key: Name 
+            Value: !Sub ${ProjectName}-nat-gateway-1
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags: 
+          - Key: Name 
+            Value: !Sub ${ProjectName}-nat-gateway-2
+
+  NatGateway1: 
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: 
+          - Key: Name 
+            Value: !Sub ${ProjectName}-nat-gateway-1
+
+  NatGateway2: 
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags: 
+          - Key: Name 
+            Value: !Sub ${ProjectName}-nat-gateway-2
+
+            ############# Route Tables ###################
+  #########################################
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${ProjectName}-public
+
+# The first rule in the table
+# Route communication that is going to anywhere (all addresses) to the internet gateway.
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0 
+      GatewayId: !Ref InternetGateway
+
+  # Attaching the routing table to a subnet.
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${ProjectName}-private-1
+
+# Notice in the private route, we route to the NAT gateway, not the internet gateway directly
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0 
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${ProjectName}-private-2
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0 
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+            ############# Outputs ###################
+  #########################################
+  # Things that are exported to be used by other templates.
+
+Outputs:
+  VPCID:
+    Description: "The VPC ID"
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${ProjectName}-vpc-id"
+
+  PublicSubnet1ID:
+    Description: "The first public subnet ID"
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet1"
+
+  PublicSubnet2ID:
+    Description: "The second public subnet ID"
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet2"
+
+  PrivateSubnet1ID:
+    Description: "The first private subnet ID"
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "${ProjectName}-private-subnet1"
+
+  PrivateSubnet2ID:
+    Description: "The second private subnet ID"
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "${ProjectName}-private-subnet2"
+
+  PublicSubnets:
+    Description: "Comma-separated list of public subnet IDs"
+    Value: !Join [",", [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+    Export:
+      Name: !Sub "${ProjectName}-public-subnets"
+
+  PrivateSubnets:
+    Description: "Comma-separated list of private subnet IDs"
+    Value: !Join [",", [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+    Export:
+      Name: !Sub "${ProjectName}-private-subnets"
