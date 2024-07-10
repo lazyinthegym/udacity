@@ -1,0 +1,10 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "udacity-exercise"
+  },
+  {
+    "ParameterKey": "AsgDesiredCapacity",
+    "ParameterValue": "1"
+  }
+]
