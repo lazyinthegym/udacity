@@ -1,1 +1,0 @@
-The final result of the network cloud formation stack created by doing the exercises in the `Netwroking Infrastructure` section of the `Deploy Infrastrucutre as Code (IAC)` course in the Cloud DevOps nano-degree. 
