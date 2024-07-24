@@ -1,0 +1,167 @@
+Description: CD12352 - Infrastructure as Code Project - Udagram
+
+Parameters:
+
+  ProjectName:
+    Description: An environment name that will be used to prefix all resources
+    Type: String
+
+  AsgDesiredCapacity:
+    Description: The number of EC2 instances that should be running in the Auto Scaling Group
+    Type: String
+    Default: 1
+
+Resources:
+  ################################ Security Groups ################################
+  ################################################################################
+
+    # We don't need to specify egress because it allows all outbound traffic by default
+    LBSecGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow http access to our load balancer
+        VpcId:
+          Fn::ImportValue:
+            !Sub "${ProjectName}-vpc-id"
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+
+    WebServerSecGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow http access to our hosts from the LB Security Group
+        VpcId:
+          Fn::ImportValue:
+            !Sub "${ProjectName}-vpc-id"
+        SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 3000
+              ToPort: 3000
+              SourceSecurityGroupId: !Ref LBSecGroup
+
+  ################################ Launch Templates ################################
+  #################################################################################
+    WebAppLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: !Sub "${ProjectName}-web-servers"
+        LaunchTemplateData:
+          UserData:
+            Fn::Base64: !Sub |
+              #!/bin/bash
+              sudo apt-get update -y
+              sudo apt-get install nginx -y
+              sudo service nginx start
+          ImageId: ami-0a313d6098716f372 # Ubuntu 22.04 LTS AMI ID
+          SecurityGroupIds:
+            - !Ref WebServerSecGroup
+          InstanceType: t2.micro
+          BlockDeviceMappings:
+            - DeviceName: "/dev/sdk"
+              Ebs:
+                VolumeSize: '10' # 10GB
+          IamInstanceProfile:
+            Name: !Ref WebAppInstanceProfile
+
+    WebAppInstanceRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: !Sub "${ProjectName}-web-servers"
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Principal:
+                Service:
+                  - 'ec2.amazonaws.com'
+              Action:
+                - 'sts:AssumeRole'
+        Policies:
+          - PolicyName: s3
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - 's3:GetObject'
+                  Resource:
+                    - !Sub "arn:aws:s3:::any-bucket-name/*"
+
+    WebAppInstanceProfile:
+      Type: AWS::IAM::InstanceProfile
+      Properties:
+        Path: '/'
+        Roles:
+          - !Ref WebAppInstanceRole
+
+    ################################ Auto Scaling ################################
+    ###############################################################################
+
+    WebAppGroup:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      Properties:
+        VPCZoneIdentifier:
+          - Fn::ImportValue:
+              !Sub "${ProjectName}-private-subnets"
+        LaunchTemplate:
+          LaunchTemplateId: !Ref WebAppLaunchTemplate
+          Version: !GetAtt WebAppLaunchTemplate.LatestVersionNumber
+        MinSize: '1'
+        DesiredCapacity: !Sub "${AsgDesiredCapacity}"
+        MaxSize: '6'
+        TargetGroupARNs:
+          - Ref: WebAppTargetGroup
+
+    ################################ Load Balancer ################################
+    ###############################################################################
+
+    WebAppLB:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Subnets:
+          - Fn::ImportValue: !Sub "${ProjectName}-public-subnet1"
+          - Fn::ImportValue: !Sub "${ProjectName}-public-subnet2"
+        SecurityGroups:
+          - Ref: LBSecGroup
+
+    Listener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn:
+              Ref: WebAppTargetGroup
+        LoadBalancerArn:
+          Ref: WebAppLB
+        Port: '80' # The port on which the load balancer is listening
+        Protocol: HTTP
+
+    ALBListenerRule:
+      Type: AWS::ElasticLoadBalancingV2::ListenerRule
+      Properties:
+        Actions:
+          - Type: forward
+            TargetGroupArn: !Ref 'WebAppTargetGroup'
+        Conditions:
+          - Field: path-pattern
+            Values: [ / ]
+        ListenerArn: !Ref 'Listener'
+        Priority: 1
+
+    WebAppTargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        HealthCheckIntervalSeconds: 10
+        HealthCheckPath: /
+        HealthCheckProtocol: HTTP
+        HealthCheckTimeoutSeconds: 8
+        HealthyThresholdCount: 2
+        Port: 3000 # The load balancer will forward traffic on this port to the targets
+        Protocol: HTTP
+        UnhealthyThresholdCount: 5
+        VpcId:
+          Fn::ImportValue:
+            Fn::Sub: "${ProjectName}-vpc-id"
