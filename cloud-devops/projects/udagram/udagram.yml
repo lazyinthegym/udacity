@@ -65,6 +65,10 @@ Resources:
               FromPort: 80
               ToPort: 80
               SourceSecurityGroupId: !Ref LBSecGroup
+            - IpProtocol: tcp
+              FromPort: 22
+              ToPort: 22
+              CidrIp: 0.0.0.0/0
 
   ################################ Launch Templates ################################
   #################################################################################
@@ -75,12 +79,16 @@ Resources:
       Properties:
         LaunchTemplateName: !Sub "${ProjectName}-web-servers"
         LaunchTemplateData:
+          KeyName: Udacity
           UserData:
             Fn::Base64: !Sub |
               #!/bin/bash
               sudo apt-get update -y
               sudo apt-get install nginx -y
               sudo service nginx start
+
+              # Install EC2 Instance Connect
+              sudo yum install ec2-instance-connect
 
               # Create a basic index.html file
               echo "<h1>It works! Udagram, Udacity!</h1>" > /var/www/html/index.html
@@ -127,6 +135,15 @@ Resources:
                     - 's3:GetObject'
                   Resource:
                     - !GetAtt S3Bucket.Arn
+          - PolicyName: EC2InstanceConnect
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - 'ec2-instance-connect:SendSSHPublicKey'
+                  Resource:
+                    - 'arn:aws:ec2:*:*:instance/*'
 
     WebAppInstanceProfile:
       Type: AWS::IAM::InstanceProfile
@@ -143,7 +160,7 @@ Resources:
       Properties:
         VPCZoneIdentifier:
           - Fn::ImportValue:
-              !Sub "${ProjectName}-private-subnets"
+              !Sub "${ProjectName}-public-subnets"
         LaunchTemplate:
           LaunchTemplateId: !Ref WebAppLaunchTemplate
           Version: !GetAtt WebAppLaunchTemplate.LatestVersionNumber
