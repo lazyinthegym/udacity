@@ -4,11 +4,15 @@ This project is part of Course 3, "Deploy Infrastructure as Code (IAC)" in the U
 The scripts under `scripts` can be used to deploy/delete both the network and app stacks.
 
 ## Table of Contents
+- [URL of the Webapp](#url-of-the-webapp)
 - [Infrastructure Diagram](#infrastructure-diagram)
 - [How to Deploy](#how-to-deploy)
 - [The Big picture](#the-big-picture)
 - [Network Key Concepts](#network-key-concepts)
 
+## URL of the Webapp
+The URL is outputed by the `udagram.yml` template
+**Load Balancer URL**: [http://udagra-WebAp-1ztJw4YEKRgm-2101366938.us-east-1.elb.amazonaws.com](http://udagra-WebAp-1ztJw4YEKRgm-2101366938.us-east-1.elb.amazonaws.com)
 
 ## Infrastructure Diagram
 The source of this diagram is [diagram/infrastructure-diagram.excalidraw](diagram/infrastructure-diagram.excalidraw), it can be imported into [excalidraw.com](excalidraw.com) and edited there.
@@ -16,11 +20,13 @@ The source of this diagram is [diagram/infrastructure-diagram.excalidraw](diagra
 
 ## How to Deploy
 
+The [scripts/deploy-all.sh](scripts/deploy-all.sh) deploys the network and udagram stacks and uploads [index.html](index.html) to the created S3 Bucket.
 **Deploy all Stacks**
 ```zsh
-./scripts/deploy-network.sh
+./scripts/deploy-all.sh
 ```
 
+The [scripts/delete-all.sh](scripts/delete-all.sh) empties the S3 Bucket, then deletes both stacks.
 **Delete all stacks**
 ```zsh
 ./scripts/delete-all.sh

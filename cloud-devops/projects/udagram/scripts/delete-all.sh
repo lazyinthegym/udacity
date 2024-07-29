@@ -1,5 +1,18 @@
 #!/bin/bash
 
+
+
+echo "Retrieving S3 bucket URL from stack output..."
+S3_BUCKET_URL=$(aws cloudformation describe-stacks \
+                --region us-east-1 \
+                --stack-name udagram \
+                --query "Stacks[0].Outputs[?ExportName=='udagram-S3BucketURI'].OutputValue" \
+                --output text)
+
+echo "Emptying the S3 bucket..."
+aws s3 rm $S3_BUCKET_URL --recursive
+
+
 # Delete the udagram stack
 aws cloudformation delete-stack \
    --stack-name udagram \

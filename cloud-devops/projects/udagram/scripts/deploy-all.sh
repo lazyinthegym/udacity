@@ -26,6 +26,27 @@ if [ $? -eq 0 ]; then
 
     if [ $? -eq 0 ]; then
         echo "Udagram stack deployed successfully."
+
+        echo "Retrieving S3 bucket URL from stack output..."
+        S3_BUCKET_URL=$(aws cloudformation describe-stacks \
+            --region us-east-1 \
+            --stack-name udagram \
+            --query "Stacks[0].Outputs[?ExportName=='udagram-S3BucketURI'].OutputValue" \
+            --output text)
+
+        if [ -n "$S3_BUCKET_URL" ]; then
+            echo "Uploading HTML file to S3 bucket..."
+            aws s3 cp "$SCRIPT_DIR/../index.html" "$S3_BUCKET_URL/index.html"
+
+            if [ $? -eq 0 ]; then
+                echo "HTML file uploaded successfully to $S3_BUCKET_URL"
+            else
+                echo "Failed to upload HTML file."
+            fi
+        else
+            echo "Failed to retrieve S3 bucket URL."
+        fi
+
     else
         echo "Failed to deploy the Udagram stack."
     fi
