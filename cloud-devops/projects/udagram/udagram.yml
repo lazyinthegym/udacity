@@ -90,8 +90,11 @@ Resources:
               # Install EC2 Instance Connect
               sudo yum install ec2-instance-connect
 
-              # Create a basic index.html file
-              echo "<h1>It works! Udagram, Udacity!</h1>" > /var/www/html/index.html
+              # Install AWS CLI
+              sudo apt-get install awscli -y
+
+              # Fetch the static website file from S3 bucket
+              sudo aws s3 cp s3://${ProjectName}-lazyinthegym-s3-bucket/index.html /var/www/html/index.html
 
               # Copy the index.html file to the Nginx web directory
               sudo rm -r $WEB_DIR/index.*
